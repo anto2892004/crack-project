@@ -7,30 +7,44 @@ import os
 import cv2
 from collections import OrderedDict
 
-# Initialize Flask app
+# ----------------------------
+# Flask app initialization
+# ----------------------------
 app = Flask(__name__)
 
+# ----------------------------
+# Model path and lazy loading
+# ----------------------------
 MODEL_PATH = os.path.join(os.getcwd(), "artifacts", "crack_detector_model.h5")
 model = None
 
-PIXEL_TO_MM = 0.1  # adjust according to camera calibration
+PIXEL_TO_MM = 0.1  # adjust according to your camera calibration
 
 def load_model_once():
+    """Load the model only once (lazy loading)."""
     global model
     if model is None:
         print(f"Loading model from: {MODEL_PATH}")
         model = tf.keras.models.load_model(MODEL_PATH)
         print("✅ Model loaded successfully!")
 
+# ----------------------------
+# Image preprocessing
+# ----------------------------
 def preprocess_image(image_bytes):
+    """Convert uploaded image to model-ready array."""
     img = Image.open(io.BytesIO(image_bytes))
-    img = img.resize((160, 160))
+    img = img.resize((160, 160))  # match your model input
     img = img.convert("RGB")
     img_array = np.array(img) / 255.0
     img_array = np.expand_dims(img_array, axis=0)
     return img_array
 
+# ----------------------------
+# Crack analysis
+# ----------------------------
 def analyze_cracks(image_bytes):
+    """Analyze crack metrics: length, width, severity, and solution."""
     img = np.array(Image.open(io.BytesIO(image_bytes)).convert("RGB"))
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     _, thresh = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -56,7 +70,6 @@ def analyze_cracks(image_bytes):
         severity = "Heavy"
         solution = "Structural assessment required; immediate repair needed."
 
-    # Return formatted strings with units
     return {
         "length": f"{round(length_mm, 2)}mm",
         "width": f"{round(width_mm, 2)}mm",
@@ -64,9 +77,12 @@ def analyze_cracks(image_bytes):
         "solution": solution
     }
 
+# ----------------------------
+# API endpoints
+# ----------------------------
 @app.route("/predict", methods=["POST"])
 def predict():
-    load_model_once()
+    load_model_once()  # Ensure model is loaded
 
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
@@ -79,12 +95,14 @@ def predict():
         image_bytes = file.read()
         img_array = preprocess_image(image_bytes)
 
+        # Model prediction
         prediction_val = model.predict(img_array)[0][0]
         result = "Crack Detected" if prediction_val > 0.5 else "No Crack"
 
+        # Crack analysis
         metrics = analyze_cracks(image_bytes)
 
-        # OrderedDict to enforce JSON order
+        # Create ordered response
         response = OrderedDict()
         response["prediction"] = result
         response["confidence"] = round(float(prediction_val), 3)
@@ -94,6 +112,7 @@ def predict():
         response["solution"] = metrics["solution"]
 
         return jsonify(response)
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -101,6 +120,9 @@ def predict():
 def home():
     return "🚀 Surface Crack Detection API is running!"
 
+# ----------------------------
+# Main entry point
+# ----------------------------
 if __name__ == "__main__":
-    load_model_once()
+    load_model_once()  # Optional: preload on startup
     app.run(host="0.0.0.0", port=5001, debug=False)
