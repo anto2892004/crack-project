@@ -1,0 +1,10 @@
+tensorflow>=2.12
+numpy
+matplotlib
+seaborn
+scikit-learn
+opencv-python
+tensorflow-probability  # optional but recommended for MixUp
+flask
+pillow
+gunicorn
