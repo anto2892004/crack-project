@@ -11,10 +11,15 @@ app = Flask(__name__)
 # Build the correct model path
 MODEL_PATH = os.path.join(os.getcwd(), "artifacts", "crack_detector_model.h5")
 
-# Load your trained model
-print(f"Loading model from: {MODEL_PATH}")
-model = tf.keras.models.load_model(MODEL_PATH)
-print("✅ Model loaded successfully!")
+# Lazy model loading
+model = None
+
+def load_model_once():
+    global model
+    if model is None:
+        print(f"Loading model from: {MODEL_PATH}")
+        model = tf.keras.models.load_model(MODEL_PATH)
+        print("✅ Model loaded successfully!")
 
 # Function to preprocess image
 def preprocess_image(image_bytes):
@@ -25,24 +30,30 @@ def preprocess_image(image_bytes):
     img_array = np.expand_dims(img_array, axis=0)
     return img_array
 
-
 # API route for prediction
 @app.route("/predict", methods=["POST"])
 def predict():
+    load_model_once()  # ensure model is loaded
+
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
     file = request.files["file"]
-    image_bytes = file.read()
-    img_array = preprocess_image(image_bytes)
+    if file.filename == "":
+        return jsonify({"error": "No selected file"}), 400
 
-    prediction = model.predict(img_array)[0][0]
-    result = "Crack Detected" if prediction > 0.5 else "No Crack"
+    try:
+        image_bytes = file.read()
+        img_array = preprocess_image(image_bytes)
+        prediction = model.predict(img_array)[0][0]
+        result = "Crack Detected" if prediction > 0.5 else "No Crack"
 
-    return jsonify({
-        "prediction": result,
-        "confidence": float(prediction)
-    })
+        return jsonify({
+            "prediction": result,
+            "confidence": float(prediction)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # Default route
 @app.route("/", methods=["GET"])
@@ -50,6 +61,6 @@ def home():
     return "🚀 Surface Crack Detection API is running!"
 
 if __name__ == "__main__":
+    # For local testing only
+    load_model_once()
     app.run(host="0.0.0.0", port=5001, debug=False)
-
-
