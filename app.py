@@ -6,6 +6,7 @@ import io
 import os
 import cv2
 from collections import OrderedDict
+import requests  # new import for fetching images from URLs
 
 # ----------------------------
 # Flask app initialization
@@ -84,18 +85,21 @@ def analyze_cracks(image_bytes):
 def predict():
     load_model_once()  # Ensure model is loaded
 
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
+    data = request.get_json()
+    if not data or "image_url" not in data:
+        return jsonify({"error": "No image URL provided"}), 400
 
-    file = request.files["file"]
-    if file.filename == "":
-        return jsonify({"error": "No selected file"}), 400
+    image_url = data["image_url"]
 
     try:
-        image_bytes = file.read()
-        img_array = preprocess_image(image_bytes)
+        # Fetch image from URL
+        response = requests.get(image_url)
+        if response.status_code != 200:
+            return jsonify({"error": "Failed to fetch image from URL"}), 400
+        image_bytes = response.content
 
-        # Model prediction
+        # Preprocess and predict
+        img_array = preprocess_image(image_bytes)
         prediction_val = model.predict(img_array)[0][0]
         result = "Crack Detected" if prediction_val > 0.5 else "No Crack"
 
@@ -103,15 +107,15 @@ def predict():
         metrics = analyze_cracks(image_bytes)
 
         # Create ordered response
-        response = OrderedDict()
-        response["prediction"] = result
-        response["confidence"] = round(float(prediction_val), 3)
-        response["length"] = metrics["length"]
-        response["width"] = metrics["width"]
-        response["severity"] = metrics["severity"]
-        response["solution"] = metrics["solution"]
+        response_data = OrderedDict()
+        response_data["prediction"] = result
+        response_data["confidence"] = round(float(prediction_val), 3)
+        response_data["length"] = metrics["length"]
+        response_data["width"] = metrics["width"]
+        response_data["severity"] = metrics["severity"]
+        response_data["solution"] = metrics["solution"]
 
-        return jsonify(response)
+        return jsonify(response_data)
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
